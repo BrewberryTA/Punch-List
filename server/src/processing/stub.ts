@@ -1,23 +1,14 @@
 /**
- * STUBBED AI processing step.
+ * Placeholder AI processing step — the FALLBACK, used only when
+ * ANTHROPIC_API_KEY isn't set (see routes/walkthroughs.ts). The real path
+ * is processing/claude.ts: transcription already happened on-device in the
+ * browser (client/src/transcribe/whisper.ts), and that transcript gets sent
+ * to Claude along with the media list to draft real structured items.
  *
- * Real pipeline (per the plan doc): send the full audio to a speech-to-text
- * provider (AssemblyAI or Deepgram), then send the transcript + each photo's
- * captured_at_ms to Claude with a prompt that drafts structured line items,
- * matching each item to its nearest preceding piece of speech.
- *
- * This stub skips transcription entirely and instead drafts one placeholder
- * item per photo/video captured during the walkthrough, in recording order,
- * so the record -> review -> commit -> follow-up flow can be built and
- * tested end-to-end before real API keys are wired in.
- *
- * TODO(real pipeline):
- *  1. Transcribe walkthrough.audio_path (AssemblyAI or Deepgram).
- *  2. Call Claude with the transcript + media list (id, captured_at_ms) and
- *     ask it to return { room, description, transcript_snippet, media_id }
- *     per item, choosing the media item whose captured_at_ms falls right
- *     after the relevant piece of speech.
- *  3. Replace the loop below with that result.
+ * This stub skips all of that and instead drafts one placeholder item per
+ * photo/video captured during the walkthrough, in recording order, so the
+ * record -> review -> commit -> follow-up flow works end-to-end even
+ * without an API key configured yet.
  */
 import { randomUUID } from "node:crypto";
 import { db } from "../db.js";

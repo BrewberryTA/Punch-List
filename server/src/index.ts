@@ -8,6 +8,18 @@ import { walkthroughsRouter } from "./routes/walkthroughs.js";
 import { itemsRouter } from "./routes/items.js";
 import { todayRouter } from "./routes/today.js";
 
+// Loads server/.env if present (Node's built-in loader — no extra
+// dependency needed on Node 20.6+/22). Nothing in this module reads env
+// vars at import time (only inside request handlers, see
+// processing/claude.ts), so it's safe for this to run after the imports
+// above. Missing in production is fine — Render/etc set env vars directly
+// — so this is best-effort, not required.
+try {
+  process.loadEnvFile();
+} catch {
+  // no .env file — normal outside local dev
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
@@ -28,4 +40,9 @@ app.use("/api/today", todayRouter);
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 app.listen(PORT, () => {
   console.log(`punch-list-server listening on http://localhost:${PORT}`);
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log(
+      "ANTHROPIC_API_KEY not set — processing walkthroughs with the placeholder stub. See server/.env.example."
+    );
+  }
 });

@@ -2,10 +2,17 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
 export type LocalWalkthroughStatus =
   | "recording" // still being narrated on-device
-  | "ready_to_sync" // recording finished, waiting for network
-  | "syncing" // sync in progress
+  | "transcribing" // on-device Whisper is running (offline, no network needed)
+  | "ready_to_sync" // transcript in hand, waiting for network to upload
+  | "syncing" // upload + processing in progress
   | "synced" // fully uploaded + processing kicked off
-  | "error"; // last sync attempt failed, will retry
+  | "error"; // last transcribe or sync attempt failed, will retry
+
+export interface LocalTranscriptChunk {
+  text: string;
+  start: number; // ms from the start of the recording
+  end: number;
+}
 
 export interface LocalWalkthrough {
   id: string; // also used as the server id (offline-first: client mints it)
@@ -16,6 +23,11 @@ export interface LocalWalkthrough {
   audioUploaded: boolean;
   createdAt: string;
   lastError?: string;
+  // On-device transcription (see src/transcribe/whisper.ts). Undefined means
+  // "not transcribed yet" — an empty string is a valid (silent) result.
+  transcript?: string;
+  transcriptChunks?: LocalTranscriptChunk[];
+  transcriptionProgress?: number; // 0-100, while status === 'transcribing'
 }
 
 export interface LocalMedia {

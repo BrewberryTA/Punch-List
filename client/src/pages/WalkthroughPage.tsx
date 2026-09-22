@@ -88,9 +88,23 @@ export function WalkthroughPage() {
           <p>
             <strong>{localPhotoCount}</strong> photo/video item(s) captured.
           </p>
+          {local.status === "transcribing" && (
+            <>
+              <p>Transcribing on-device… {local.transcriptionProgress ?? 0}%</p>
+              <p className="muted">
+                Runs locally (no cloud speech-to-text) — the first walkthrough on
+                this device pauses here while the speech model downloads once;
+                every walkthrough after that transcribes fully offline.
+              </p>
+            </>
+          )}
           {local.status === "ready_to_sync" && (
             <>
-              <p>Saved on this device — waiting for a connection to upload.</p>
+              <p>
+                {local.transcript !== undefined
+                  ? "Transcribed on-device — waiting for a connection to upload."
+                  : "Saved on this device — preparing to transcribe."}
+              </p>
               <button className="secondary" onClick={() => void syncAll()}>
                 Try syncing now
               </button>
@@ -144,7 +158,9 @@ export function WalkthroughPage() {
           <p className="muted">
             {server.status === "queued"
               ? "Uploaded — waiting to process."
-              : "Processing (stubbed for now — real transcription isn't wired up yet)."}
+              : server.ai_configured
+                ? "Claude is drafting items from your on-device transcript…"
+                : "Drafting placeholder items (no ANTHROPIC_API_KEY configured on the server yet — see server/.env.example)."}
           </p>
         </div>
       </div>
@@ -190,6 +206,9 @@ export function WalkthroughPage() {
                   onBlur={(e) => void updateField(item.id, "room", e.target.value)}
                 />
               </label>
+              {item.transcript_snippet && (
+                <p className="muted">"{item.transcript_snippet}"</p>
+              )}
               <label>
                 Description
                 <textarea

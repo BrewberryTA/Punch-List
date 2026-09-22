@@ -39,11 +39,15 @@ export interface Walkthrough {
   project_id: string;
   status: "recording" | "queued" | "processing" | "review" | "finalized";
   audio_path: string | null;
+  transcript: string | null;
   recorded_at: string | null;
   created_at: string;
   finalized_at: string | null;
   items: Item[];
   media: Media[];
+  // Whether the server has ANTHROPIC_API_KEY configured — true means items
+  // were drafted by the real Claude pass, false means the placeholder stub.
+  ai_configured: boolean;
 }
 
 export interface TodaySite {

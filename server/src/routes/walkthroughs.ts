@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { db } from "../db.js";
 import { processWalkthroughStub } from "../processing/stub.js";
+import { processWalkthroughWithClaude } from "../processing/claude.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, "..", "..", "uploads");
@@ -31,7 +32,10 @@ function getWalkthroughFull(id: string) {
   const media = db
     .prepare("SELECT * FROM media WHERE walkthrough_id = ? ORDER BY captured_at_ms ASC")
     .all(id);
-  return { ...walkthrough, items, media };
+  // Lets the client tell the difference between "real Claude drafting" and
+  // "placeholder stub" without guessing from the item text.
+  const aiConfigured = Boolean(process.env.ANTHROPIC_API_KEY);
+  return { ...walkthrough, items, media, ai_configured: aiConfigured };
 }
 
 // Start a new walkthrough (offline-first: the client can create this locally
@@ -68,18 +72,22 @@ walkthroughsRouter.get("/:id", (req, res) => {
 });
 
 // Upload the full audio recording once the walkthrough is done (this is what
-// the offline sync queue calls once the device is back online).
+// the offline sync queue calls once the device is back online). The
+// transcript rides along here too — it was already produced on-device (see
+// client/src/transcribe/whisper.ts) before this upload ever happens, so the
+// server never needs to run its own speech-to-text.
 walkthroughsRouter.post(
   "/:id/audio",
   upload.single("audio"),
   (req, res) => {
     const { id } = req.params;
     if (!req.file) return res.status(400).json({ error: "audio file required" });
+    const transcript = typeof req.body?.transcript === "string" ? req.body.transcript : null;
     // Store just the filename (served under /uploads/<filename>), not the
     // absolute disk path — the client needs a URL it can actually load.
     db.prepare(
-      "UPDATE walkthroughs SET audio_path = ?, status = 'queued', recorded_at = datetime('now') WHERE id = ?"
-    ).run(req.file.filename, id);
+      "UPDATE walkthroughs SET audio_path = ?, transcript = ?, status = 'queued', recorded_at = datetime('now') WHERE id = ?"
+    ).run(req.file.filename, transcript, id);
     res.json(getWalkthroughFull(id));
   }
 );
@@ -120,14 +128,23 @@ walkthroughsRouter.patch("/:id/media/:mediaId/confirm", (req, res) => {
   res.json({ ok: true });
 });
 
-// Kick off processing (stubbed for now — see processing/stub.ts).
-walkthroughsRouter.post("/:id/process", (req, res) => {
+// Kick off processing: real Claude drafting pass when ANTHROPIC_API_KEY is
+// configured (see processing/claude.ts and server/.env.example), otherwise
+// the placeholder stub so the rest of the app still works without a key.
+walkthroughsRouter.post("/:id/process", async (req, res) => {
   db.prepare(
     "UPDATE walkthroughs SET status = 'processing' WHERE id = ?"
   ).run(req.params.id);
   try {
-    processWalkthroughStub(req.params.id);
+    if (process.env.ANTHROPIC_API_KEY) {
+      await processWalkthroughWithClaude(req.params.id);
+    } else {
+      processWalkthroughStub(req.params.id);
+    }
   } catch (err) {
+    db.prepare(
+      "UPDATE walkthroughs SET status = 'queued' WHERE id = ?"
+    ).run(req.params.id);
     return res.status(500).json({ error: (err as Error).message });
   }
   res.json(getWalkthroughFull(req.params.id));
