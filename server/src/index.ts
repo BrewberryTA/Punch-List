@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import "./db.js"; // ensure tables exist on boot
 import { projectsRouter } from "./routes/projects.js";
@@ -36,6 +37,23 @@ app.use("/api/projects", projectsRouter);
 app.use("/api/walkthroughs", walkthroughsRouter);
 app.use("/api/items", itemsRouter);
 app.use("/api/today", todayRouter);
+
+// Serves the built client (client/dist, copied here by `npm run build` at
+// the repo root — see scripts/copy-client-dist.mjs and DEPLOY.md) so the
+// whole app is ONE deployed URL: no separate hosting for the PWA, no CORS,
+// nothing to cross-wire. In local dev this folder doesn't exist (each half
+// runs on its own via `npm run dev`), so this is a no-op there — guarded by
+// the existsSync check below.
+const publicDir = path.join(__dirname, "..", "public");
+if (fs.existsSync(path.join(publicDir, "index.html"))) {
+  app.use(express.static(publicDir));
+  // SPA fallback for client-side routes (/projects/:id/record, etc.) —
+  // anything that isn't an API or uploads request gets the app shell, and
+  // React Router takes it from there.
+  app.get(/^(?!\/api|\/uploads).*/, (_req, res) => {
+    res.sendFile(path.join(publicDir, "index.html"));
+  });
+}
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 app.listen(PORT, () => {

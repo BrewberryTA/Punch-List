@@ -8,6 +8,9 @@ plus a daily follow-up view.
 Full product plan: see the "Punch List App: Product Plan" doc in your Claude project
 (architecture decisions, data model, open questions log with sourced pricing).
 
+**Want to use this on your phone right now?** See [DEPLOY.md](./DEPLOY.md) — the
+section below ("Running locally") is for developing on a computer, not phone use.
+
 ## Status (v1 scaffold — build order step 2 of 6, in progress)
 
 This is a working end-to-end scaffold covering the **record → on-device transcribe →
@@ -34,6 +37,8 @@ What's real and working:
 - Daily digest (`/today`) shows open items whose commitment date is today or
   earlier, grouped by project/site
 - Mark items complete
+- **Deploys as one URL** (server serves the built client directly — see
+  DEPLOY.md) so there's nothing to cross-wire for phone use
 
 What's stubbed / not yet built:
 - Server-side media storage lifecycle (delete-on-project/phase-close)
@@ -64,11 +69,17 @@ in, text out, and needs an `ANTHROPIC_API_KEY` (see below).
 ## Structure
 
 ```
-client/   React + TypeScript + Vite, installable PWA
-server/   Node + TypeScript + Express + SQLite (better-sqlite3)
+client/            React + TypeScript + Vite, installable PWA
+server/            Node + TypeScript + Express + SQLite (better-sqlite3)
+scripts/           build orchestration (see DEPLOY.md)
+package.json       root — combined build/start for deployment only
 ```
 
 ## Running locally
+
+This section is for developing on a computer — it runs the client and server as
+two separate dev processes. **For actually using the app on your phone, see
+[DEPLOY.md](./DEPLOY.md) instead** — that's a single deployed URL, not this.
 
 ```bash
 # terminal 1
@@ -90,10 +101,14 @@ benchmarked yet.
 
 ### Getting an Anthropic API key
 
-`server/.env.example` shows what's needed. Create a key at
-https://console.anthropic.com (billing must be enabled on the account). Without
-it, `POST /api/walkthroughs/:id/process` falls back to the placeholder stub —
-the rest of the app (recording, offline sync, review, commitment dates, daily
+`server/.env.example` shows what's needed **for local development only** — copy
+it to `server/.env` and it's read automatically. This file never leaves your
+computer (gitignored) and has nothing to do with a real deployment; for that,
+the same key goes into your host's environment variable settings instead (see
+DEPLOY.md). Create the key itself at https://console.anthropic.com (billing
+must be enabled on the account). Without it, either way,
+`POST /api/walkthroughs/:id/process` falls back to the placeholder stub — the
+rest of the app (recording, offline sync, review, commitment dates, daily
 digest) works identically either way, so this can be added later without
 touching anything else.
 

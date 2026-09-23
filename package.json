@@ -1,0 +1,10 @@
+{
+  "name": "punch-list-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Orchestrates a single combined build/start for deployment (Render, etc). See DEPLOY.md. For local development, run client/ and server/ separately — see README.md.",
+  "scripts": {
+    "build": "npm --prefix client install && npm --prefix client run build && node scripts/copy-client-dist.mjs && npm --prefix server install && npm --prefix server run build",
+    "start": "node server/dist/index.js"
+  }
+}
