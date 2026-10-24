@@ -7,6 +7,7 @@ export function ProjectsPage() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,6 +31,23 @@ export function ProjectsPage() {
       setError(String(e));
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function deleteProject(project: Project) {
+    const confirmed = window.confirm(
+      `Delete "${project.name}"? This permanently removes it and everything in it — walkthroughs, photos, items. This can't be undone.`
+    );
+    if (!confirmed) return;
+    setDeletingId(project.id);
+    setError(null);
+    try {
+      await api.deleteProject(project.id);
+      setProjects((prev) => prev?.filter((p) => p.id !== project.id) ?? prev);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -70,9 +88,19 @@ export function ProjectsPage() {
               <strong>{p.name}</strong>
               {p.address && <div className="muted">{p.address}</div>}
             </div>
-            <Link className="link-button" to={`/projects/${p.id}/record`}>
-              Start walkthrough
-            </Link>
+            <div className="list-row-actions">
+              <Link className="link-button" to={`/projects/${p.id}/record`}>
+                Start walkthrough
+              </Link>
+              <button
+                type="button"
+                className="danger small"
+                disabled={deletingId === p.id}
+                onClick={() => deleteProject(p)}
+              >
+                {deletingId === p.id ? "Deleting…" : "Delete"}
+              </button>
+            </div>
           </li>
         ))}
       </ul>

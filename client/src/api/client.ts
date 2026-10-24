@@ -72,6 +72,19 @@ export const api = {
       body: JSON.stringify({ name, address }),
     }).then((r) => json<Project>(r)),
 
+  // Permanently deletes the project and everything in it (walkthroughs,
+  // items, photos/video). Used to clear out test projects — there's no undo.
+  deleteProject: (id: string) =>
+    fetch(`/api/projects/${id}`, { method: "DELETE" }).then(
+      async (r) => {
+        if (!r.ok) {
+          const body = (await r.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? `${r.status} ${r.statusText}`);
+        }
+        return r.json() as Promise<{ ok: true }>;
+      }
+    ),
+
   listWalkthroughs: (projectId: string) =>
     fetch(`/api/walkthroughs?projectId=${projectId}`).then((r) =>
       json<Walkthrough[]>(r)
