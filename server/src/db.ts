@@ -1,9 +1,19 @@
 import Database from "better-sqlite3";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, "..", "data", "punchlist.db");
+const dataDir = path.join(__dirname, "..", "data");
+const dbPath = path.join(dataDir, "punchlist.db");
+
+// Git doesn't track empty folders, so `data/` only existed locally because
+// it got created by hand at some point — on a fresh deploy (Render, etc) it
+// genuinely doesn't exist yet, and better-sqlite3 refuses to create it for
+// us (this is exactly what crashed the first Render deploy: "Cannot open
+// database because the directory does not exist"). Create it on every boot;
+// recursive + idempotent, so this is a harmless no-op locally.
+fs.mkdirSync(dataDir, { recursive: true });
 
 export const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");

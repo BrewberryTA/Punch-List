@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,9 @@ import { processWalkthroughWithClaude } from "../processing/claude.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, "..", "..", "uploads");
+// Same reasoning as server/src/db.ts: this folder isn't guaranteed to exist
+// on a fresh deploy, and multer's diskStorage won't create it for us.
+fs.mkdirSync(uploadsDir, { recursive: true });
 
 const upload = multer({
   storage: multer.diskStorage({
