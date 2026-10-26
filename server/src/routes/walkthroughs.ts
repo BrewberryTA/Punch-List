@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { uploadsDir } from "../paths.js";
+import { buildPunchListPdf, pdfFilename } from "../pdf.js";
 import { pushWalkthrough, homebuilderConfigured } from "../homebuilder.js";
 import { db } from "../db.js";
 import { processWalkthroughStub } from "../processing/stub.js";
@@ -193,6 +194,21 @@ walkthroughsRouter.post("/:id/push", async (req, res) => {
   const full = getWalkthroughFull(req.params.id);
   if (!full) return res.status(404).json({ error: "not found" });
   res.json({ ...full, push_result: result });
+});
+
+// The shareable PDF: every item on this walkthrough, with photos, under the
+// Axxo LLC header. The phone hands it to the share sheet (text, email,
+// AirDrop) — photos are inside the file, so the person receiving it doesn't
+// need a login.
+walkthroughsRouter.get("/:id/pdf", (req, res) => {
+  const doc = buildPunchListPdf(req.params.id);
+  if (!doc) return res.status(404).json({ error: "not found" });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `${req.query.download ? "attachment" : "inline"}; filename="${pdfFilename(req.params.id)}"`
+  );
+  doc.pipe(res);
 });
 
 function publicBase(req: import("express").Request) {

@@ -13,6 +13,13 @@ export function WalkthroughPage() {
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [finalizing, setFinalizing] = useState(false);
   const [pushing, setPushing] = useState(false);
+  // Share-as-PDF. iPhone only opens the share sheet straight from a tap, and
+  // building the PDF takes a moment — so if the first tap's permission has
+  // lapsed by the time the file arrives, the file is kept and a second
+  // "Share now" tap sends it instantly.
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const refreshLocal = useCallback(async () => {
     if (!id) return;
@@ -75,6 +82,47 @@ export function WalkthroughPage() {
       setFinalizeError(e instanceof Error ? e.message : String(e));
     } finally {
       setFinalizing(false);
+    }
+  }
+
+  async function sharePdf() {
+    if (!id) return;
+    setPdfError(null);
+    let file = pdfFile;
+    if (!file) {
+      setPdfBusy(true);
+      try {
+        const r = await fetch(`/api/walkthroughs/${id}/pdf`);
+        if (r.status === 401) window.dispatchEvent(new Event("pl-signed-out"));
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        const cd = r.headers.get("Content-Disposition") ?? "";
+        const name = /filename="([^"]+)"/.exec(cd)?.[1] ?? "Punch-List.pdf";
+        file = new File([await r.blob()], name, { type: "application/pdf" });
+      } catch (e) {
+        setPdfError(
+          e instanceof TypeError
+            ? "No connection — sharing needs signal to build the PDF."
+            : `Couldn't build the PDF: ${e instanceof Error ? e.message : String(e)}`
+        );
+        setPdfBusy(false);
+        return;
+      }
+      setPdfBusy(false);
+    }
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: file.name });
+        setPdfFile(null);
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") {
+          setPdfFile(null); // they closed the share sheet
+        } else {
+          setPdfFile(file); // permission lapsed while building — offer "Share now"
+        }
+      }
+    } else {
+      // No share sheet (e.g. desktop browser): open the PDF to save/print it.
+      window.open(URL.createObjectURL(file), "_blank");
     }
   }
 
@@ -187,7 +235,21 @@ export function WalkthroughPage() {
     <div className="page">
       <header className="page-header">
         <h1>Review</h1>
+        {items.length > 0 && (
+          <button
+            type="button"
+            className="secondary small"
+            disabled={pdfBusy}
+            onClick={() => void sharePdf()}
+          >
+            {pdfBusy ? "Building PDF…" : pdfFile ? "Share now" : "Share PDF"}
+          </button>
+        )}
       </header>
+      {pdfFile && !pdfBusy && (
+        <p className="muted">PDF ready — tap <strong>Share now</strong> to send it.</p>
+      )}
+      {pdfError && <p className="error">{pdfError}</p>}
 
       {server.status === "finalized" && (
         <div className="card success">

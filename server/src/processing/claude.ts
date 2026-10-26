@@ -66,7 +66,18 @@ async function draftItemsWithClaude(
       "transcript snippet, and pick the media id whose timestamp falls closest after (or during) " +
       "the speech describing that item — or null if nothing was captured for it. Do not invent " +
       "work that wasn't mentioned. If the transcript is empty or has no actionable content, " +
-      "return an empty items array.",
+      "return an empty items array.\n\n" +
+      "The transcript comes from a small on-phone speech model recorded on noisy job sites, so " +
+      "it often mis-hears construction terms. In the room and description you write, silently " +
+      "fix words that are clearly mis-heard construction or trade vocabulary when the intended " +
+      "term is obvious from context — e.g. 'dry wall'/'dry all' → drywall, 'pee trap' → P-trap, " +
+      "'j channel' → J-channel, 'soffet' → soffit, 'grout' vs 'grit', 'base board' → baseboard, " +
+      "'casing' vs 'chasing', 'gfi'/'g f c i' → GFCI, 'hose bib', 'flashing', 'caulk' vs 'cock', " +
+      "'shim', 'reveal', 'jamb', 'escutcheon', 'stucco', 'texture', 'knock down', 'mud', 'tape'. " +
+      "Also normalise room names (e.g. 'master bath', 'powder room', 'great room'). Keep the " +
+      "transcript_snippet exactly as transcribed so the original wording stays visible. If a " +
+      "word is garbled and the meaning is NOT clear, keep it and add '(unclear)' rather than " +
+      "guessing.",
     tools: [
       {
         name: DRAFT_TOOL_NAME,

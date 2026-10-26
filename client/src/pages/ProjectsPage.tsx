@@ -243,6 +243,8 @@ export function ProjectsPage({ onLogout }: { onLogout: () => void }) {
           )}
         </>
       )}
+
+      <p className="build-stamp">Axxo LLC · Punch List · build {__BUILD_STAMP__}</p>
     </div>
   );
 }
