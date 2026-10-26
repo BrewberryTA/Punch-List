@@ -15,11 +15,28 @@ export function ProjectsPage() {
   // Homebuilder Ops link: null = still loading / not reachable
   const [hb, setHb] = useState<{ configured: boolean; projects: HbProject[]; error?: string } | null>(null);
 
+  const [offline, setOffline] = useState(false);
+
   useEffect(() => {
+    // The list is saved on the phone every time it loads, so opening the app
+    // in a dead zone still shows your projects and lets you start a
+    // walkthrough (recording itself is fully offline — see src/offline).
     api
       .listProjects()
-      .then(setProjects)
-      .catch((e) => setError(String(e)));
+      .then((list) => {
+        setProjects(list);
+        setOffline(false);
+        saveCachedProjects(list);
+      })
+      .catch((e) => {
+        const cached = loadCachedProjects();
+        if (cached) {
+          setProjects(cached);
+          setOffline(true);
+        } else {
+          setError(`No connection, and this phone hasn't saved your project list yet. Open the app once with signal. (${String(e)})`);
+        }
+      });
     api.listClosedProjects().then(setClosed).catch(() => {});
     api
       .homebuilderProjects()
@@ -69,7 +86,11 @@ export function ProjectsPage() {
     setError(null);
     try {
       const project = await api.createProject(name.trim(), address.trim() || undefined);
-      setProjects((prev) => (prev ? [project, ...prev] : [project]));
+      setProjects((prev) => {
+        const next = prev ? [project, ...prev] : [project];
+        saveCachedProjects(next);
+        return next;
+      });
       setName("");
       setAddress("");
     } catch (e) {
@@ -104,6 +125,16 @@ export function ProjectsPage() {
           Today
         </Link>
       </header>
+
+      {offline && (
+        <div className="card">
+          <p>
+            <strong>No signal</strong> — showing the project list saved on this phone. You can
+            start a walkthrough; it uploads once you're back in service. New projects need a
+            connection.
+          </p>
+        </div>
+      )}
 
       <form className="card" onSubmit={createProject}>
         <h2>New project</h2>
@@ -209,4 +240,23 @@ export function ProjectsPage() {
       )}
     </div>
   );
+}
+
+const CACHE_KEY = "punchlist.projects.v1";
+
+function saveCachedProjects(list: Project[]) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+  } catch {
+    // storage full or blocked — offline list just won't be available
+  }
+}
+
+function loadCachedProjects(): Project[] | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Project[]) : null;
+  } catch {
+    return null;
+  }
 }
