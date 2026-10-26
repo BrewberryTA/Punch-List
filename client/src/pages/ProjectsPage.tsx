@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type HbProject, type Project } from "../api/client";
+import { api, type HbProject, type Project, type Walkthrough } from "../api/client";
+import { getDb, type LocalWalkthrough } from "../offline/db";
 
 export function ProjectsPage({ onLogout }: { onLogout: () => void }) {
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -16,6 +17,7 @@ export function ProjectsPage({ onLogout }: { onLogout: () => void }) {
   const [hb, setHb] = useState<{ configured: boolean; projects: HbProject[]; error?: string } | null>(null);
 
   const [offline, setOffline] = useState(false);
+  const [openWalks, setOpenWalks] = useState<string | null>(null);
 
   useEffect(() => {
     // The list is saved on the phone every time it loads, so opening the app
@@ -168,6 +170,14 @@ export function ProjectsPage({ onLogout }: { onLogout: () => void }) {
             <div>
               <strong>{p.name}</strong>
               {p.address && <div className="muted">{p.address}</div>}
+              <button
+                type="button"
+                className="walks-toggle"
+                onClick={() => setOpenWalks((v) => (v === p.id ? null : p.id))}
+              >
+                {openWalks === p.id ? "▾" : "▸"} Walkthroughs
+              </button>
+              {openWalks === p.id && <WalkthroughList projectId={p.id} />}
               {hb?.configured && (
                 <label className="hb-link">
                   <span className="muted">Sends to Homebuilder Ops:</span>
@@ -266,4 +276,80 @@ function loadCachedProjects(): Project[] | null {
   } catch {
     return null;
   }
+}
+
+// Past walkthroughs for one project: the ones on the server, plus any still
+// sitting on this phone waiting to upload (so they show up with no signal).
+function WalkthroughList({ projectId }: { projectId: string }) {
+  const [server, setServer] = useState<Walkthrough[] | null>(null);
+  const [local, setLocal] = useState<LocalWalkthrough[]>([]);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    api
+      .listWalkthroughs(projectId)
+      .then(setServer)
+      .catch(() => {
+        setServer([]);
+        setFailed(true);
+      });
+    getDb()
+      .then((db) => db.getAll("walkthroughs"))
+      .then((all) =>
+        setLocal(all.filter((w) => w.projectId === projectId && w.status !== "synced"))
+      )
+      .catch(() => {});
+  }, [projectId]);
+
+  if (server === null) return <p className="muted walks">Loading…</p>;
+
+  const serverIds = new Set(server.map((w) => w.id));
+  const rows = [
+    ...local
+      .filter((w) => !serverIds.has(w.id))
+      .map((w) => ({ id: w.id, when: w.createdAt, label: "On this phone — waiting to upload" })),
+    ...server.map((w) => ({
+      id: w.id,
+      when: w.recorded_at ?? w.created_at,
+      label:
+        w.status === "finalized"
+          ? "Finalized"
+          : w.status === "review"
+            ? "Needs review"
+            : w.status === "recording"
+              ? "Not uploaded yet"
+              : "Processing",
+    })),
+  ];
+
+  if (rows.length === 0) {
+    return (
+      <p className="muted walks">
+        {failed ? "Couldn't load walkthroughs (no signal?)." : "No walkthroughs yet."}
+      </p>
+    );
+  }
+
+  return (
+    <ul className="walks">
+      {rows.map((r) => (
+        <li key={r.id}>
+          <Link to={`/walkthroughs/${r.id}`}>{fmtWhen(r.when)}</Link>
+          <span className="muted"> · {r.label}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function fmtWhen(iso: string | null | undefined) {
+  if (!iso) return "Walkthrough";
+  const d = new Date(iso.includes("T") ? iso : iso.replace(" ", "T") + "Z");
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

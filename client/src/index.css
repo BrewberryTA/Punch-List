@@ -481,3 +481,25 @@ button:disabled { opacity: .45; cursor: default; }
   color: var(--muted);
   opacity: .8;
 }
+
+/* past walkthroughs under each project */
+.walks-toggle {
+  display: block;
+  margin: 6px 0 0;
+  padding: 2px 0;
+  min-height: 32px;
+  border: none;
+  box-shadow: none;
+  background: none;
+  font-size: 14px;
+  color: var(--ink);
+}
+.walks-toggle:active { transform: none; }
+.walks {
+  list-style: none;
+  margin: 4px 0 6px;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--rule);
+}
+.walks li { padding: 4px 0; font-size: 16px; }
+.walks a { font-weight: 400; }

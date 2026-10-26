@@ -193,6 +193,35 @@ export function RecordPage() {
     navigate(`/walkthroughs/${walkthroughIdRef.current}`);
   }
 
+  // Back out without saving. Before recording starts this just leaves; once
+  // recording, it asks first, then throws away the audio and any photos/clips
+  // already captured for this walkthrough so nothing half-made gets uploaded.
+  async function cancelWalkthrough() {
+    if (phase === "recording") {
+      const n = photoCount + videoClipCount;
+      const ok = window.confirm(
+        `Discard this walkthrough?\n\nThe recording${n ? ` and ${n} photo/video item(s)` : ""} will be deleted. This can't be undone.`
+      );
+      if (!ok) return;
+      if (timerRef.current) window.clearInterval(timerRef.current);
+      const rec = audioRecorderRef.current;
+      if (rec && rec.state !== "inactive") {
+        rec.onstop = null;
+        rec.stop();
+      }
+      const clip = clipRecorderRef.current;
+      if (clip && clip.state !== "inactive") {
+        clip.onstop = null;
+        clip.stop();
+      }
+      const db = await getDb();
+      const media = await db.getAllFromIndex("media", "by-walkthrough", walkthroughIdRef.current);
+      for (const m of media) await db.delete("media", m.id);
+    }
+    stopAllTracks();
+    navigate("/");
+  }
+
   function formatElapsed(ms: number) {
     const s = Math.floor(ms / 1000);
     const m = Math.floor(s / 60);
@@ -204,6 +233,11 @@ export function RecordPage() {
     <div className="page">
       <header className="page-header">
         <h1>Walkthrough</h1>
+        {(phase === "idle" || phase === "recording") && (
+          <button type="button" className="secondary small" onClick={() => void cancelWalkthrough()}>
+            {phase === "idle" ? "← Back" : "Cancel"}
+          </button>
+        )}
       </header>
 
       {error && <p className="error">{error}</p>}
