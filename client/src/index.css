@@ -509,3 +509,13 @@ button:disabled { opacity: .45; cursor: default; }
 .media-move .item-photo { margin-bottom: 4px; }
 .move-label { margin-bottom: 4px; font-size: 12px; }
 .move-label select { min-height: 36px; padding: 6px 4px; font-size: 15px; }
+
+.walk-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.delete-walk { align-self: flex-start; }

@@ -3,6 +3,7 @@ import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { uploadsDir } from "../paths.js";
 import { buildPunchListPdf, pdfFilename } from "../pdf.js";
+import { deleteWalkthroughCompletely } from "../media.js";
 import { pushWalkthrough, homebuilderConfigured } from "../homebuilder.js";
 import { db } from "../db.js";
 import { processWalkthroughStub } from "../processing/stub.js";
@@ -152,6 +153,16 @@ walkthroughsRouter.patch("/:id/media/:mediaId/confirm", (req, res) => {
   db.prepare("UPDATE media SET confirmed = 1 WHERE id = ?").run(
     req.params.mediaId
   );
+  res.json({ ok: true });
+});
+
+// Permanently delete a walkthrough and everything in it (items, photos,
+// clips, audio). The phone confirms first. Items already pushed to
+// Homebuilder Ops stay there — the client warns about that.
+walkthroughsRouter.delete("/:id", (req, res) => {
+  if (!deleteWalkthroughCompletely(req.params.id)) {
+    return res.status(404).json({ error: "not found" });
+  }
   res.json({ ok: true });
 });
 

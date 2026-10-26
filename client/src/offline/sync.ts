@@ -67,15 +67,23 @@ async function ensureTranscript(wt: LocalWalkthrough) {
   await db.put("walkthroughs", { ...wt, status: "transcribing", transcriptionProgress: 0 });
   notify();
 
+  // If the walkthrough is deleted while it's still transcribing, don't write
+  // it back into existence.
+  const stillExists = async () => Boolean(await db.get("walkthroughs", wt.id));
+
   const result = await transcribeAudioBlob(wt.audioBlob ?? new Blob(), (p) => {
-    void db.put("walkthroughs", {
-      ...wt,
-      status: "transcribing",
-      transcriptionProgress: Math.round(p.progress),
+    void stillExists().then((yes) => {
+      if (!yes) return;
+      void db.put("walkthroughs", {
+        ...wt,
+        status: "transcribing",
+        transcriptionProgress: Math.round(p.progress),
+      });
+      notify();
     });
-    notify();
   });
 
+  if (!(await stillExists())) return;
   await db.put("walkthroughs", {
     ...wt,
     status: "ready_to_sync",
@@ -163,12 +171,13 @@ async function syncOne(walkthroughId: string) {
     }).then(assertOk);
 
     wt = (await db.get("walkthroughs", walkthroughId)) as LocalWalkthrough;
-    await db.put("walkthroughs", { ...wt, status: "synced", lastError: undefined });
+    if (wt) await db.put("walkthroughs", { ...wt, status: "synced", lastError: undefined });
   } catch (err) {
     const current = (await db.get(
       "walkthroughs",
       walkthroughId
     )) as LocalWalkthrough;
+    if (!current) return; // deleted mid-upload
     await db.put("walkthroughs", {
       ...current,
       status: "error",

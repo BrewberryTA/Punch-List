@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Item, type Media, type Walkthrough } from "../api/client";
 import { getDb, type LocalWalkthrough } from "../offline/db";
 import { onSyncChange, syncAll } from "../offline/sync";
 
 export function WalkthroughPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [deleting, setDeleting] = useState(false);
   const [local, setLocal] = useState<LocalWalkthrough | null>(null);
   const [localPhotoCount, setLocalPhotoCount] = useState(0);
   const [server, setServer] = useState<Walkthrough | null>(null);
@@ -84,6 +86,46 @@ export function WalkthroughPage() {
       setFinalizing(false);
     }
   }
+
+  // Two-step on purpose: the button asks, then a confirm box spells out
+  // what goes, so a stray tap can't wipe a walkthrough.
+  async function deleteThisWalkthrough() {
+    if (!id) return;
+    const pushed = server?.items.some((i) => i.homebuilder_item_id);
+    const n = server?.items.length ?? 0;
+    const ok = window.confirm(
+      `Delete this walkthrough?\n\n` +
+        (server
+          ? `This permanently removes its ${n} item(s), photos, video and recording.`
+          : `This permanently removes the recording and photos saved on this phone.`) +
+        (pushed ? `\n\nItems already sent to Homebuilder Ops will stay there — delete them in Homebuilder Ops if needed.` : "") +
+        `\n\nThis can't be undone.`
+    );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      if (server) await api.deleteWalkthrough(id);
+      const db = await getDb();
+      const media = await db.getAllFromIndex("media", "by-walkthrough", id);
+      for (const m of media) await db.delete("media", m.id);
+      await db.delete("walkthroughs", id);
+      navigate("/");
+    } catch (e) {
+      setFinalizeError(e instanceof Error ? e.message : String(e));
+      setDeleting(false);
+    }
+  }
+
+  const deleteButton = (
+    <button
+      type="button"
+      className="danger small delete-walk"
+      disabled={deleting}
+      onClick={() => void deleteThisWalkthrough()}
+    >
+      {deleting ? "Deleting…" : "Delete walkthrough"}
+    </button>
+  );
 
   async function moveMedia(mediaId: string, target: string) {
     if (!id) return;
@@ -181,6 +223,7 @@ export function WalkthroughPage() {
             </>
           )}
           {local.status === "syncing" && <p>Uploading…</p>}
+          {deleteButton}
           {local.status === "error" && (
             <>
               <p className="error">Last upload attempt failed: {local.lastError}</p>
@@ -407,9 +450,12 @@ export function WalkthroughPage() {
         </div>
       )}
 
-      <Link className="link-button" to="/">
-        ← Projects
-      </Link>
+      <div className="walk-footer">
+        <Link className="link-button" to="/">
+          ← Projects
+        </Link>
+        {deleteButton}
+      </div>
     </div>
   );
 }

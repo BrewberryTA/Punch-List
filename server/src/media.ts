@@ -52,3 +52,31 @@ export function deleteProjectMediaFiles(projectId: string): number {
 
   return removed;
 }
+
+// Deletes one walkthrough completely: its photo/video/audio files on disk,
+// its media rows, its items and the walkthrough itself. No undo.
+export function deleteWalkthroughCompletely(walkthroughId: string): boolean {
+  const wt = db
+    .prepare("SELECT audio_path FROM walkthroughs WHERE id = ?")
+    .get(walkthroughId) as { audio_path: string | null } | undefined;
+  if (!wt) return false;
+  const files = (
+    db.prepare("SELECT file_path FROM media WHERE walkthrough_id = ?").all(walkthroughId) as {
+      file_path: string;
+    }[]
+  ).map((m) => m.file_path);
+  if (wt.audio_path) files.push(wt.audio_path);
+  for (const f of files) {
+    try {
+      fs.unlinkSync(path.join(uploadsDir, path.basename(f)));
+    } catch {
+      // already gone — fine
+    }
+  }
+  db.transaction(() => {
+    db.prepare("DELETE FROM media WHERE walkthrough_id = ?").run(walkthroughId);
+    db.prepare("DELETE FROM items WHERE walkthrough_id = ?").run(walkthroughId);
+    db.prepare("DELETE FROM walkthroughs WHERE id = ?").run(walkthroughId);
+  })();
+  return true;
+}

@@ -149,6 +149,16 @@ export const api = {
       body: JSON.stringify({ homebuilderProjectId }),
     }).then((r) => json<Project>(r)),
 
+  deleteWalkthrough: (id: string) =>
+    fetch(`/api/walkthroughs/${id}`, { method: "DELETE" }).then(async (r) => {
+      if (r.status === 401) window.dispatchEvent(new Event("pl-signed-out"));
+      // 404 = never reached the server (or already gone) — fine to clear locally
+      if (!r.ok && r.status !== 404) {
+        const body = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `${r.status} ${r.statusText}`);
+      }
+    }),
+
   moveMedia: (walkthroughId: string, mediaId: string, itemId: string | null) =>
     fetch(`/api/walkthroughs/${walkthroughId}/media/${mediaId}`, {
       method: "PATCH",
