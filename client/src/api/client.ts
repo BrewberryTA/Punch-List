@@ -73,11 +73,34 @@ export interface TodaySite {
 }
 
 async function json<T>(res: Response): Promise<T> {
+  if (res.status === 401) window.dispatchEvent(new Event("pl-signed-out"));
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
 
+export interface SessionUser {
+  hb_user_id: number;
+  username: string;
+  display_name: string | null;
+  role: string | null;
+}
+
 export const api = {
+  me: () => fetch("/api/auth/me"),
+
+  login: async (username: string, password: string) => {
+    const r = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const body = (await r.json().catch(() => null)) as (SessionUser & { error?: string }) | null;
+    if (!r.ok) throw new Error(body?.error ?? `${r.status} ${r.statusText}`);
+    return body as SessionUser;
+  },
+
+  logout: () => fetch("/api/auth/logout", { method: "POST" }),
+
   listProjects: () => fetch("/api/projects").then((r) => json<Project[]>(r)),
 
   createProject: (name: string, address?: string) =>

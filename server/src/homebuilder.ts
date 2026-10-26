@@ -154,3 +154,31 @@ export async function pushWalkthrough(
     return { pushed: 0, error: msg };
   }
 }
+
+// Checks a username/password against Homebuilder Ops, so Punch List uses the
+// same logins. Returns the user on success, null on a wrong password, and
+// throws if Homebuilder Ops can't be asked at all (key missing, or down).
+export async function verifyHomebuilderLogin(
+  username: string,
+  password: string
+): Promise<{
+  hb_user_id: number;
+  username: string;
+  display_name: string | null;
+  role: string | null;
+} | null> {
+  if (!homebuilderConfigured()) {
+    throw new Error("Logins aren't set up: HOMEBUILDER_OPS_KEY is missing on the Punch-List service.");
+  }
+  try {
+    const u = (await call("/api/integrations/punch-list/verify-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    })) as { id: number; username: string; display_name: string | null; role: string | null };
+    return { hb_user_id: u.id, username: u.username, display_name: u.display_name, role: u.role };
+  } catch (e) {
+    if (e instanceof Error && e.message.includes(" 401:")) return null;
+    throw e;
+  }
+}

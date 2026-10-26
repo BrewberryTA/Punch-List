@@ -175,6 +175,12 @@ async function syncOne(walkthroughId: string) {
 }
 
 async function assertOk(res: Response) {
+  if (res.status === 401) {
+    // Session ended. Nothing is lost: the recording stays queued on this
+    // phone and uploads automatically once you log back in.
+    window.dispatchEvent(new Event("pl-signed-out"));
+    throw new Error("Signed out — log in again to upload. Your recording is safe on this phone.");
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`${res.status} ${res.statusText}: ${body}`);

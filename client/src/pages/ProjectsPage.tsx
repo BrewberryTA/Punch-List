@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type HbProject, type Project } from "../api/client";
 
-export function ProjectsPage() {
+export function ProjectsPage({ onLogout }: { onLogout: () => void }) {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -121,9 +121,14 @@ export function ProjectsPage() {
     <div className="page">
       <header className="page-header">
         <h1>Punch List</h1>
-        <Link className="link-button" to="/today">
-          Today
-        </Link>
+        <div className="list-row-actions">
+          <Link className="link-button" to="/today">
+            Today
+          </Link>
+          <button type="button" className="secondary small" onClick={onLogout}>
+            Log out
+          </button>
+        </div>
       </header>
 
       {offline && (

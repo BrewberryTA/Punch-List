@@ -46,8 +46,11 @@ What's real and working:
 - **Close out a project** deletes its photos/video/audio, keeps item text
 - **Persistent storage** on a Render disk at `/var/data` (`server/src/paths.ts`)
 
+- **Logins** shared with Homebuilder Ops (`server/src/auth.ts`); everyone
+  logged in sees all projects
+
 What's stubbed / not yet built:
-- Auth / multi-user (out of scope until "product to sell" question resolves)
+- Per-person project visibility (out of scope until "product to sell" question resolves)
 
 The app is deployed and in use on a phone (see DEPLOY.md).
 

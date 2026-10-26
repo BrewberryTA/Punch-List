@@ -59,6 +59,14 @@ Optional: `HOMEBUILDER_OPS_URL` if Homebuilder Ops ever moves off
 which Homebuilder Ops project each punch-list project sends to. Pushes are
 one-way: checking an item off in one app doesn't check it off in the other.
 
+## Logins
+
+The app uses the same usernames and passwords as Homebuilder Ops. Punch List
+never stores passwords: it asks Homebuilder Ops to check them (same shared
+key as above), then keeps its own 90-day session on the phone. Anyone with a
+Homebuilder Ops account can log in and sees all projects. Logging in needs
+signal once; after that the app opens and records offline.
+
 ## Close out a project
 
 Projects screen → **Close out**: deletes that project's photos, video and

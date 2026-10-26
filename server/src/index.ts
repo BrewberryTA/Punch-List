@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import "./db.js"; // ensure tables exist on boot
 import { uploadsDir, dataRoot, persistent } from "./paths.js";
 import { homebuilderRouter } from "./routes/homebuilder.js";
+import { authRouter, requireLogin } from "./auth.js";
 import { projectsRouter } from "./routes/projects.js";
 import { walkthroughsRouter } from "./routes/walkthroughs.js";
 import { itemsRouter } from "./routes/items.js";
@@ -35,11 +36,14 @@ app.set("trust proxy", true);
 
 // Uploaded media, served from the data dir (the persistent disk on Render —
 // see paths.ts). Deleted per project on close-out.
-app.use("/uploads", express.static(uploadsDir));
+app.use("/uploads", requireLogin, express.static(uploadsDir));
 
 app.get("/api/health", (_req, res) =>
   res.json({ ok: true, storagePersistent: persistent })
 );
+// Login/logout are open; every other data route needs a session (auth.ts).
+app.use("/api/auth", authRouter);
+app.use("/api", requireLogin);
 app.use("/api/projects", projectsRouter);
 app.use("/api/walkthroughs", walkthroughsRouter);
 app.use("/api/items", itemsRouter);
