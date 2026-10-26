@@ -23,7 +23,14 @@ body {
 .page {
   max-width: 480px;
   margin: 0 auto;
-  padding: 16px 16px 48px;
+  /* Keep content clear of the iPhone camera cutout / status bar at the top
+     and the home indicator at the bottom. The app draws edge-to-edge
+     (viewport-fit=cover), so these insets are needed; they're 0 on
+     phones/browsers without a notch. */
+  padding: calc(16px + env(safe-area-inset-top, 0px))
+    max(16px, env(safe-area-inset-right, 0px))
+    calc(48px + env(safe-area-inset-bottom, 0px))
+    max(16px, env(safe-area-inset-left, 0px));
 }
 
 .page-header {
