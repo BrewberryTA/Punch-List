@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type Project } from "../api/client";
+import { api, type HbProject, type Project } from "../api/client";
 
 export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -9,13 +9,58 @@ export function ProjectsPage() {
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const [closed, setClosed] = useState<Project[]>([]);
+  const [showClosed, setShowClosed] = useState(false);
+  // Homebuilder Ops link: null = still loading / not reachable
+  const [hb, setHb] = useState<{ configured: boolean; projects: HbProject[]; error?: string } | null>(null);
 
   useEffect(() => {
     api
       .listProjects()
       .then(setProjects)
       .catch((e) => setError(String(e)));
+    api.listClosedProjects().then(setClosed).catch(() => {});
+    api
+      .homebuilderProjects()
+      .then(setHb)
+      .catch((e) => setHb({ configured: true, projects: [], error: String(e) }));
   }, []);
+
+  async function linkHomebuilder(project: Project, value: string) {
+    setError(null);
+    try {
+      const updated = await api.linkHomebuilder(project.id, value ? Number(value) : null);
+      setProjects((prev) => prev?.map((p) => (p.id === updated.id ? updated : p)) ?? prev);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function closeOut(project: Project) {
+    setError(null);
+    let openNote = "";
+    try {
+      const { open } = await api.openItemCount(project.id);
+      if (open > 0) openNote = `\n\nHeads up: ${open} item(s) are still open. Their text stays, but their photos go.`;
+    } catch {
+      // count is just a courtesy warning
+    }
+    const confirmed = window.confirm(
+      `Close out "${project.name}"?\n\nThis deletes all of its photos, video and audio from the server. Item text, dates and trades are kept as the record. Photo links already sent to Homebuilder Ops will stop working. This can't be undone.${openNote}`
+    );
+    if (!confirmed) return;
+    setClosingId(project.id);
+    try {
+      await api.closeOutProject(project.id);
+      setProjects((prev) => prev?.filter((p) => p.id !== project.id) ?? prev);
+      setClosed((prev) => [{ ...project, closed_at: new Date().toISOString() }, ...prev]);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setClosingId(null);
+    }
+  }
 
   async function createProject(e: React.FormEvent) {
     e.preventDefault();
@@ -87,11 +132,43 @@ export function ProjectsPage() {
             <div>
               <strong>{p.name}</strong>
               {p.address && <div className="muted">{p.address}</div>}
+              {hb?.configured && (
+                <label className="hb-link">
+                  <span className="muted">Sends to Homebuilder Ops:</span>
+                  <select
+                    value={p.homebuilder_project_id ?? ""}
+                    disabled={!!hb.error && !p.homebuilder_project_id}
+                    onChange={(e) => void linkHomebuilder(p, e.target.value)}
+                  >
+                    <option value="">— not linked —</option>
+                    {hb.projects.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                    {p.homebuilder_project_id &&
+                      !hb.projects.some((h) => h.id === p.homebuilder_project_id) && (
+                        <option value={p.homebuilder_project_id}>
+                          Project #{p.homebuilder_project_id}
+                        </option>
+                      )}
+                  </select>
+                  {hb.error && <span className="muted">Couldn't reach Homebuilder Ops right now.</span>}
+                </label>
+              )}
             </div>
             <div className="list-row-actions">
               <Link className="link-button" to={`/projects/${p.id}/record`}>
                 Start walkthrough
               </Link>
+              <button
+                type="button"
+                className="secondary small"
+                disabled={closingId === p.id}
+                onClick={() => void closeOut(p)}
+              >
+                {closingId === p.id ? "Closing…" : "Close out"}
+              </button>
               <button
                 type="button"
                 className="danger small"
@@ -104,6 +181,32 @@ export function ProjectsPage() {
           </li>
         ))}
       </ul>
+
+      {closed.length > 0 && (
+        <>
+          <button
+            type="button"
+            className="secondary small"
+            onClick={() => setShowClosed((v) => !v)}
+          >
+            {showClosed ? "Hide" : "Show"} closed-out projects ({closed.length})
+          </button>
+          {showClosed && (
+            <ul className="list">
+              {closed.map((p) => (
+                <li key={p.id} className="list-row">
+                  <div>
+                    <strong>{p.name}</strong>
+                    <div className="muted">
+                      Closed out {p.closed_at?.slice(0, 10)} · photos/video deleted
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </div>
   );
 }

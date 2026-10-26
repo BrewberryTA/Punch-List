@@ -1,19 +1,11 @@
 import Database from "better-sqlite3";
-import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { dbDir } from "./paths.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.join(__dirname, "..", "data");
-const dbPath = path.join(dataDir, "punchlist.db");
-
-// Git doesn't track empty folders, so `data/` only existed locally because
-// it got created by hand at some point — on a fresh deploy (Render, etc) it
-// genuinely doesn't exist yet, and better-sqlite3 refuses to create it for
-// us (this is exactly what crashed the first Render deploy: "Cannot open
-// database because the directory does not exist"). Create it on every boot;
-// recursive + idempotent, so this is a harmless no-op locally.
-fs.mkdirSync(dataDir, { recursive: true });
+// Location (and the folder-creation it needs on a fresh deploy) lives in
+// paths.ts: on Render it must sit on the persistent disk or it is wiped on
+// every redeploy.
+const dbPath = path.join(dbDir, "punchlist.db");
 
 export const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
@@ -73,3 +65,25 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_items_commitment ON items(commitment_date);
   CREATE INDEX IF NOT EXISTS idx_media_walkthrough ON media(walkthrough_id);
 `);
+
+// Columns added after the first deploy. CREATE TABLE IF NOT EXISTS above does
+// nothing to a table that already exists, so new columns are added here.
+function addColumnIfMissing(table: string, column: string, def: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${def}`);
+  }
+}
+
+// Which Homebuilder Ops project this punch-list project pushes into (its
+// integer id over there). Null = not linked, finalize pushes nothing.
+addColumnIfMissing("projects", "homebuilder_project_id", "homebuilder_project_id INTEGER");
+// Close-out: the job is done, its photos/video/audio are deleted from the
+// server, the item text stays as the record.
+addColumnIfMissing("projects", "closed_at", "closed_at TEXT");
+addColumnIfMissing("projects", "media_deleted_at", "media_deleted_at TEXT");
+// The punch item this became in Homebuilder Ops, once pushed.
+addColumnIfMissing("items", "homebuilder_item_id", "homebuilder_item_id INTEGER");
+// Last push failure, shown on the review screen with a Retry button. Cleared
+// on success.
+addColumnIfMissing("walkthroughs", "homebuilder_push_error", "homebuilder_push_error TEXT");

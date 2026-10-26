@@ -40,17 +40,16 @@ What's real and working:
 - **Deploys as one URL** (server serves the built client directly — see
   DEPLOY.md) so there's nothing to cross-wire for phone use
 
+- **Homebuilder Ops push on finalize** (`server/src/homebuilder.ts`): items
+  land as punch items on the linked Homebuilder Ops project, with photo
+  links; failures are saved and retryable from the review screen
+- **Close out a project** deletes its photos/video/audio, keeps item text
+- **Persistent storage** on a Render disk at `/var/data` (`server/src/paths.ts`)
+
 What's stubbed / not yet built:
-- Server-side media storage lifecycle (delete-on-project/phase-close)
-- Homebuilder Ops push on finalize (TODO marked in
-  `server/src/routes/walkthroughs.ts`)
 - Auth / multi-user (out of scope until "product to sell" question resolves)
 
-Nothing here has been tried yet on an actual phone — the backend is fully tested
-(curl-verified end to end), the client typechecks and production-builds clean, but
-the recording/camera UI and on-device transcription both need real hardware (mic,
-camera, and — for transcription — enough CPU to run a Whisper model) to verify,
-which this environment can't do.
+The app is deployed and in use on a phone (see DEPLOY.md).
 
 ## Why on-device transcription instead of a cloud STT API
 

@@ -12,6 +12,7 @@ export function WalkthroughPage() {
   const [notFoundYet, setNotFoundYet] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [finalizing, setFinalizing] = useState(false);
+  const [pushing, setPushing] = useState(false);
 
   const refreshLocal = useCallback(async () => {
     if (!id) return;
@@ -74,6 +75,18 @@ export function WalkthroughPage() {
       setFinalizeError(e instanceof Error ? e.message : String(e));
     } finally {
       setFinalizing(false);
+    }
+  }
+
+  async function retryPush() {
+    if (!id) return;
+    setPushing(true);
+    try {
+      setServer(await api.pushToHomebuilder(id));
+    } catch (e) {
+      setFinalizeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPushing(false);
     }
   }
 
@@ -179,9 +192,42 @@ export function WalkthroughPage() {
       {server.status === "finalized" && (
         <div className="card success">
           <p>✅ Finalized{server.finalized_at ? ` — ${server.finalized_at}` : ""}.</p>
-          <p className="muted">
-            Homebuilder Ops push is a TODO in the server stub — see the plan doc.
-          </p>
+          {(() => {
+            const pushedCount = server.items.filter((i) => i.homebuilder_item_id).length;
+            const allPushed = server.items.length > 0 && pushedCount === server.items.length;
+            if (!server.homebuilder_configured) {
+              return <p className="muted">Homebuilder Ops sending isn't switched on yet.</p>;
+            }
+            if (!server.homebuilder_project_id) {
+              return (
+                <>
+                  <p className="muted">
+                    Not sent to Homebuilder Ops — this project isn't linked to one. Link it on
+                    the Projects screen, then come back and tap Send.
+                  </p>
+                  <button className="secondary" disabled={pushing} onClick={() => void retryPush()}>
+                    {pushing ? "Sending…" : "Send to Homebuilder Ops"}
+                  </button>
+                </>
+              );
+            }
+            if (allPushed) {
+              return <p className="muted">📤 Sent to Homebuilder Ops ({pushedCount} punch item{pushedCount === 1 ? "" : "s"}).</p>;
+            }
+            return (
+              <>
+                {server.homebuilder_push_error && (
+                  <p className="error">Couldn't send to Homebuilder Ops: {server.homebuilder_push_error}</p>
+                )}
+                <p className="muted">
+                  {pushedCount} of {server.items.length} item(s) sent to Homebuilder Ops.
+                </p>
+                <button className="secondary" disabled={pushing} onClick={() => void retryPush()}>
+                  {pushing ? "Sending…" : "Retry sending"}
+                </button>
+              </>
+            );
+          })()}
         </div>
       )}
 

@@ -32,15 +32,39 @@ there's nothing to cross-wire and no separate "API address" to configure.
 
    That's what turns it into an app icon instead of a browser tab.
 
-## Data durability — read before relying on this for real job sites
+## Data durability — attach a disk
 
-SQLite (`server/data/punchlist.db`) and uploaded photos (`server/uploads/`)
-are stored on Render's own disk. On Render's **free tier, that disk is not
-persistent** — a redeploy or restart can wipe it. That's fine for testing
-this scaffold, but before you're trusting it with real punch lists, this
-needs either a paid Render **persistent disk**, or a move to real object
-storage — both already noted as open work in the plan doc's "media storage"
-question.
+Render wipes a service's own files on every redeploy, restart or spin-down.
+Only files on an attached **persistent disk** survive. The app stores its
+database and photos on the disk automatically when one is mounted at
+`/var/data` (see `server/src/paths.ts`) — no env var needed.
+
+1. The service must be on a paid compute plan (`0.5c-512mb`, $7/mo — the
+   free plan can't have a disk).
+2. Service → **Disk** → mount path **`/var/data`** → smallest size (1 GB is
+   plenty to start; it can grow later but never shrink) → **Add disk**.
+3. Check: `https://<your-url>/api/health` should say
+   `"storagePersistent": true`.
+
+## Homebuilder Ops push
+
+Finalized lists push onto the linked project's punch list in Homebuilder Ops.
+Both services need the same secret:
+
+- **Homebuilder Ops** service → Environment → `PUNCHLIST_INTEGRATION_KEY`
+- **Punch-List** service → Environment → `HOMEBUILDER_OPS_KEY` (same value)
+
+Optional: `HOMEBUILDER_OPS_URL` if Homebuilder Ops ever moves off
+`https://homebuilder-app.onrender.com`. Then, on the Projects screen, pick
+which Homebuilder Ops project each punch-list project sends to. Pushes are
+one-way: checking an item off in one app doesn't check it off in the other.
+
+## Close out a project
+
+Projects screen → **Close out**: deletes that project's photos, video and
+audio from the server, keeps item text/dates/trades, and moves it to
+"closed-out projects". Photo links already pushed to Homebuilder Ops stop
+working at that point.
 
 ## Updating after this deploy
 

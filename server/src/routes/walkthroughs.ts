@@ -1,18 +1,12 @@
 import { Router } from "express";
 import multer from "multer";
-import fs from "node:fs";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
+import { uploadsDir } from "../paths.js";
+import { pushWalkthrough, homebuilderConfigured } from "../homebuilder.js";
 import { db } from "../db.js";
 import { processWalkthroughStub } from "../processing/stub.js";
 import { processWalkthroughWithClaude } from "../processing/claude.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadsDir = path.join(__dirname, "..", "..", "uploads");
-// Same reasoning as server/src/db.ts: this folder isn't guaranteed to exist
-// on a fresh deploy, and multer's diskStorage won't create it for us.
-fs.mkdirSync(uploadsDir, { recursive: true });
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -39,7 +33,17 @@ function getWalkthroughFull(id: string) {
   // Lets the client tell the difference between "real Claude drafting" and
   // "placeholder stub" without guessing from the item text.
   const aiConfigured = Boolean(process.env.ANTHROPIC_API_KEY);
-  return { ...walkthrough, items, media, ai_configured: aiConfigured };
+  const project = db
+    .prepare("SELECT homebuilder_project_id FROM projects WHERE id = ?")
+    .get(walkthrough.project_id) as { homebuilder_project_id: number | null } | undefined;
+  return {
+    ...walkthrough,
+    items,
+    media,
+    ai_configured: aiConfigured,
+    homebuilder_configured: homebuilderConfigured(),
+    homebuilder_project_id: project?.homebuilder_project_id ?? null,
+  };
 }
 
 // Start a new walkthrough (offline-first: the client can create this locally
@@ -157,7 +161,7 @@ walkthroughsRouter.post("/:id/process", async (req, res) => {
 // Finalize: every item must have a commitment date before this is allowed,
 // per the plan. Finalizing is also what triggers the (future) Homebuilder
 // Ops push.
-walkthroughsRouter.post("/:id/finalize", (req, res) => {
+walkthroughsRouter.post("/:id/finalize", async (req, res) => {
   const { id } = req.params;
   const items = db
     .prepare("SELECT id, commitment_date FROM items WHERE walkthrough_id = ?")
@@ -172,11 +176,25 @@ walkthroughsRouter.post("/:id/finalize", (req, res) => {
   }
 
   db.prepare(
-    "UPDATE walkthroughs SET status = 'finalized', finalized_at = datetime('now') WHERE id = ?"
+    "UPDATE walkthroughs SET status = 'finalized', finalized_at = COALESCE(finalized_at, datetime('now')) WHERE id = ?"
   ).run(id);
 
-  // TODO: push items onto this project's existing open-task list in
-  // Homebuilder Ops here, then stamp pushed_to_homebuilder_ops_at.
+  // Push onto the linked project's punch list in Homebuilder Ops. A failed
+  // push never un-finalizes the list: the error is stored on the walkthrough
+  // and the review screen offers Retry (POST /:id/push below).
+  await pushWalkthrough(id, publicBase(req));
 
   res.json(getWalkthroughFull(id));
 });
+
+// Retry (or first-time push, if the project was linked after finalizing).
+walkthroughsRouter.post("/:id/push", async (req, res) => {
+  const result = await pushWalkthrough(req.params.id, publicBase(req));
+  const full = getWalkthroughFull(req.params.id);
+  if (!full) return res.status(404).json({ error: "not found" });
+  res.json({ ...full, push_result: result });
+});
+
+function publicBase(req: import("express").Request) {
+  return `${req.protocol}://${req.get("host")}`;
+}

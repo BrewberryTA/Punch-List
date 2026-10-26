@@ -8,6 +8,16 @@ export interface Project {
   address: string | null;
   created_at: string;
   archived_at: string | null;
+  homebuilder_project_id: number | null;
+  closed_at: string | null;
+  media_deleted_at: string | null;
+}
+
+export interface HbProject {
+  id: number;
+  name: string;
+  address: string | null;
+  status: string | null;
 }
 
 export interface Item {
@@ -22,6 +32,7 @@ export interface Item {
   status: "open" | "complete";
   completed_at: string | null;
   created_at: string;
+  homebuilder_item_id: number | null;
 }
 
 export interface Media {
@@ -48,6 +59,10 @@ export interface Walkthrough {
   // Whether the server has ANTHROPIC_API_KEY configured — true means items
   // were drafted by the real Claude pass, false means the placeholder stub.
   ai_configured: boolean;
+  homebuilder_configured: boolean;
+  homebuilder_project_id: number | null;
+  pushed_to_homebuilder_ops_at: string | null;
+  homebuilder_push_error: string | null;
 }
 
 export interface TodaySite {
@@ -83,6 +98,37 @@ export const api = {
         }
         return r.json() as Promise<{ ok: true }>;
       }
+    ),
+
+  listClosedProjects: () =>
+    fetch("/api/projects/closed").then((r) => json<Project[]>(r)),
+
+  openItemCount: (id: string) =>
+    fetch(`/api/projects/${id}/open-count`).then((r) => json<{ open: number }>(r)),
+
+  // Deletes the project's photos/video/audio from the server, keeps item
+  // text, moves the project to "Closed out". No undo.
+  closeOutProject: (id: string) =>
+    fetch(`/api/projects/${id}/close-out`, { method: "POST" }).then((r) =>
+      json<{ ok: true; filesDeleted: number }>(r)
+    ),
+
+  homebuilderProjects: () =>
+    fetch("/api/homebuilder/projects").then(
+      (r) =>
+        r.json() as Promise<{ configured: boolean; projects: HbProject[]; error?: string }>
+    ),
+
+  linkHomebuilder: (id: string, homebuilderProjectId: number | null) =>
+    fetch(`/api/projects/${id}/homebuilder`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ homebuilderProjectId }),
+    }).then((r) => json<Project>(r)),
+
+  pushToHomebuilder: (walkthroughId: string) =>
+    fetch(`/api/walkthroughs/${walkthroughId}/push`, { method: "POST" }).then((r) =>
+      json<Walkthrough>(r)
     ),
 
   listWalkthroughs: (projectId: string) =>

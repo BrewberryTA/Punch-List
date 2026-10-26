@@ -246,3 +246,17 @@ button:disabled {
   border-radius: 8px;
   margin-bottom: 8px;
 }
+
+/* Homebuilder Ops link picker on each project row */
+.hb-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+.hb-link select {
+  max-width: 100%;
+  padding: 6px 8px;
+  font-size: 0.9rem;
+}

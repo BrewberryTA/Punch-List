@@ -4,6 +4,8 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import "./db.js"; // ensure tables exist on boot
+import { uploadsDir, dataRoot, persistent } from "./paths.js";
+import { homebuilderRouter } from "./routes/homebuilder.js";
 import { projectsRouter } from "./routes/projects.js";
 import { walkthroughsRouter } from "./routes/walkthroughs.js";
 import { itemsRouter } from "./routes/items.js";
@@ -27,16 +29,22 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Dev-only: serve uploaded media directly. In production this should move
-// to object storage (see plan doc — server-side storage with a delete
-// option per project/phase).
-app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
+// Render sits behind a proxy; this makes req.protocol report https so the
+// photo links pushed to Homebuilder Ops are correct.
+app.set("trust proxy", true);
 
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+// Uploaded media, served from the data dir (the persistent disk on Render —
+// see paths.ts). Deleted per project on close-out.
+app.use("/uploads", express.static(uploadsDir));
+
+app.get("/api/health", (_req, res) =>
+  res.json({ ok: true, storagePersistent: persistent })
+);
 app.use("/api/projects", projectsRouter);
 app.use("/api/walkthroughs", walkthroughsRouter);
 app.use("/api/items", itemsRouter);
 app.use("/api/today", todayRouter);
+app.use("/api/homebuilder", homebuilderRouter);
 
 // Serves the built client (client/dist, copied here by `npm run build` at
 // the repo root — see scripts/copy-client-dist.mjs and DEPLOY.md) so the
@@ -58,6 +66,11 @@ if (fs.existsSync(path.join(publicDir, "index.html"))) {
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 app.listen(PORT, () => {
   console.log(`punch-list-server listening on http://localhost:${PORT}`);
+  console.log(
+    persistent
+      ? `Data stored on persistent disk at ${dataRoot}`
+      : `WARNING: data stored at ${dataRoot}, which is NOT persistent on Render — attach a disk at /var/data (see DEPLOY.md).`
+  );
   if (!process.env.ANTHROPIC_API_KEY) {
     console.log(
       "ANTHROPIC_API_KEY not set — processing walkthroughs with the placeholder stub. See server/.env.example."
