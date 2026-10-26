@@ -121,6 +121,9 @@ async function syncOne(walkthroughId: string) {
       const form = new FormData();
       form.append("audio", wt.audioBlob, `${wt.id}.webm`);
       form.append("transcript", wt.transcript ?? "");
+      // When each sentence was said (same clock as each photo's timestamp),
+      // so the drafting step can tell which photo goes with which item.
+      form.append("transcriptChunks", JSON.stringify(wt.transcriptChunks ?? []));
       await fetch(`/api/walkthroughs/${wt.id}/audio`, {
         method: "POST",
         body: form,

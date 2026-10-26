@@ -92,11 +92,29 @@ walkthroughsRouter.post(
     const { id } = req.params;
     if (!req.file) return res.status(400).json({ error: "audio file required" });
     const transcript = typeof req.body?.transcript === "string" ? req.body.transcript : null;
+    // Timestamped segments ([{text,start,end}], ms from recording start —
+    // same clock as each photo's capturedAtMs). Validated, then stored as
+    // JSON; drafting uses them to tie photos to what was being said.
+    let chunks: string | null = null;
+    if (typeof req.body?.transcriptChunks === "string") {
+      try {
+        const parsed = JSON.parse(req.body.transcriptChunks);
+        if (Array.isArray(parsed)) {
+          chunks = JSON.stringify(
+            parsed
+              .filter((c) => c && typeof c.text === "string")
+              .map((c) => ({ text: c.text, start: Number(c.start) || 0, end: Number(c.end) || 0 }))
+          );
+        }
+      } catch {
+        // bad JSON — fall back to the plain transcript
+      }
+    }
     // Store just the filename (served under /uploads/<filename>), not the
     // absolute disk path — the client needs a URL it can actually load.
     db.prepare(
-      "UPDATE walkthroughs SET audio_path = ?, transcript = ?, status = 'queued', recorded_at = datetime('now') WHERE id = ?"
-    ).run(req.file.filename, transcript, id);
+      "UPDATE walkthroughs SET audio_path = ?, transcript = ?, transcript_chunks = ?, status = 'queued', recorded_at = datetime('now') WHERE id = ?"
+    ).run(req.file.filename, transcript, chunks, id);
     res.json(getWalkthroughFull(id));
   }
 );
@@ -135,6 +153,31 @@ walkthroughsRouter.patch("/:id/media/:mediaId/confirm", (req, res) => {
     req.params.mediaId
   );
   res.json({ ok: true });
+});
+
+// Move a photo/clip to a different item on the same walkthrough, or to
+// "unassigned" (itemId null). Allowed until the list is finalized.
+walkthroughsRouter.patch("/:id/media/:mediaId", (req, res) => {
+  const { id, mediaId } = req.params;
+  const wt = db.prepare("SELECT status FROM walkthroughs WHERE id = ?").get(id) as
+    | { status: string }
+    | undefined;
+  if (!wt) return res.status(404).json({ error: "not found" });
+  if (wt.status === "finalized") {
+    return res.status(409).json({ error: "This list is finalized — photos can't be moved." });
+  }
+  const itemId = req.body?.itemId ?? null;
+  if (itemId !== null) {
+    const item = db
+      .prepare("SELECT id FROM items WHERE id = ? AND walkthrough_id = ?")
+      .get(itemId, id);
+    if (!item) return res.status(400).json({ error: "that item isn't on this walkthrough" });
+  }
+  const r = db
+    .prepare("UPDATE media SET item_id = ?, confirmed = 1 WHERE id = ? AND walkthrough_id = ?")
+    .run(itemId, mediaId, id);
+  if (r.changes === 0) return res.status(404).json({ error: "photo not found" });
+  res.json(getWalkthroughFull(id));
 });
 
 // Kick off processing: real Claude drafting pass when ANTHROPIC_API_KEY is

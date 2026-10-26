@@ -149,6 +149,20 @@ export const api = {
       body: JSON.stringify({ homebuilderProjectId }),
     }).then((r) => json<Project>(r)),
 
+  moveMedia: (walkthroughId: string, mediaId: string, itemId: string | null) =>
+    fetch(`/api/walkthroughs/${walkthroughId}/media/${mediaId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemId }),
+    }).then(async (r) => {
+      if (r.status === 401) window.dispatchEvent(new Event("pl-signed-out"));
+      if (!r.ok) {
+        const body = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `${r.status} ${r.statusText}`);
+      }
+      return r.json() as Promise<Walkthrough>;
+    }),
+
   pushToHomebuilder: (walkthroughId: string) =>
     fetch(`/api/walkthroughs/${walkthroughId}/push`, { method: "POST" }).then((r) =>
       json<Walkthrough>(r)

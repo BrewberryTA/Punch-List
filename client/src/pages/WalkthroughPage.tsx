@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, type Walkthrough } from "../api/client";
+import { api, type Item, type Media, type Walkthrough } from "../api/client";
 import { getDb, type LocalWalkthrough } from "../offline/db";
 import { onSyncChange, syncAll } from "../offline/sync";
 
@@ -82,6 +82,15 @@ export function WalkthroughPage() {
       setFinalizeError(e instanceof Error ? e.message : String(e));
     } finally {
       setFinalizing(false);
+    }
+  }
+
+  async function moveMedia(mediaId: string, target: string) {
+    if (!id) return;
+    try {
+      setServer(await api.moveMedia(id, mediaId, target === "" ? null : target));
+    } catch (e) {
+      setFinalizeError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -230,6 +239,8 @@ export function WalkthroughPage() {
 
   const items = server.items;
   const missingCommitment = items.filter((i) => !i.commitment_date);
+  const itemIds = new Set(items.map((i) => i.id));
+  const unassigned = server.media.filter((m) => !m.item_id || !itemIds.has(m.item_id));
 
   return (
     <div className="page">
@@ -299,11 +310,13 @@ export function WalkthroughPage() {
           return (
             <li key={item.id} className="item-card">
               {media.map((m) => (
-                <img
+                <MediaWithMove
                   key={m.id}
-                  className="item-photo"
-                  src={`/uploads/${m.file_path}`}
-                  alt=""
+                  media={m}
+                  items={items}
+                  currentItemId={item.id}
+                  locked={server.status === "finalized"}
+                  onMove={(target) => void moveMedia(m.id, target)}
                 />
               ))}
               <label>
@@ -357,6 +370,25 @@ export function WalkthroughPage() {
         })}
       </ul>
 
+      {unassigned.length > 0 && (
+        <div className="card">
+          <h2>Unassigned photos</h2>
+          <p className="muted">
+            These didn't clearly match an item. Pick where each one goes, or leave it out.
+          </p>
+          {unassigned.map((m) => (
+            <MediaWithMove
+              key={m.id}
+              media={m}
+              items={items}
+              currentItemId={null}
+              locked={server.status === "finalized"}
+              onMove={(target) => void moveMedia(m.id, target)}
+            />
+          ))}
+        </div>
+      )}
+
       {server.status !== "finalized" && (
         <div className="card">
           {missingCommitment.length > 0 && (
@@ -378,6 +410,46 @@ export function WalkthroughPage() {
       <Link className="link-button" to="/">
         ← Projects
       </Link>
+    </div>
+  );
+}
+
+// A photo (or clip) with a "Move to…" picker underneath, for when the
+// automatic match put it on the wrong item.
+function MediaWithMove({
+  media,
+  items,
+  currentItemId,
+  locked,
+  onMove,
+}: {
+  media: Media;
+  items: Item[];
+  currentItemId: string | null;
+  locked: boolean;
+  onMove: (targetItemId: string) => void;
+}) {
+  const src = `/uploads/${media.file_path}`;
+  return (
+    <div className="media-move">
+      {media.kind === "video" ? (
+        <video className="item-photo" src={src} controls playsInline preload="metadata" />
+      ) : (
+        <img className="item-photo" src={src} alt="" />
+      )}
+      {!locked && (
+        <label className="move-label">
+          {currentItemId ? "Move this photo to" : "Put this photo on"}
+          <select value={currentItemId ?? ""} onChange={(e) => onMove(e.target.value)}>
+            <option value="">— no item (leave out) —</option>
+            {items.map((it, i) => (
+              <option key={it.id} value={it.id}>
+                {`#${i + 1} ${it.room ? it.room + ": " : ""}${it.description}`.slice(0, 70)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </div>
   );
 }

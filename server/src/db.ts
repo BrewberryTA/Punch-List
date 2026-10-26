@@ -87,3 +87,6 @@ addColumnIfMissing("items", "homebuilder_item_id", "homebuilder_item_id INTEGER"
 // Last push failure, shown on the review screen with a Retry button. Cleared
 // on success.
 addColumnIfMissing("walkthroughs", "homebuilder_push_error", "homebuilder_push_error TEXT");
+// Timestamped transcript from the phone ([{text,start,end}] in ms, JSON), so
+// drafting can line up what was said with when each photo was taken.
+addColumnIfMissing("walkthroughs", "transcript_chunks", "transcript_chunks TEXT");

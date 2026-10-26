@@ -503,3 +503,9 @@ button:disabled { opacity: .45; cursor: default; }
 }
 .walks li { padding: 4px 0; font-size: 16px; }
 .walks a { font-weight: 400; }
+
+/* photo + "move to" picker on the review screen */
+.media-move { margin-bottom: 10px; }
+.media-move .item-photo { margin-bottom: 4px; }
+.move-label { margin-bottom: 4px; font-size: 12px; }
+.move-label select { min-height: 36px; padding: 6px 4px; font-size: 15px; }
