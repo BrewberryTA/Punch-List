@@ -195,23 +195,50 @@ walkthroughsRouter.patch("/:id/media/:mediaId", (req, res) => {
 // configured (see processing/claude.ts and server/.env.example), otherwise
 // the placeholder stub so the rest of the app still works without a key.
 walkthroughsRouter.post("/:id/process", async (req, res) => {
-  db.prepare(
-    "UPDATE walkthroughs SET status = 'processing' WHERE id = ?"
-  ).run(req.params.id);
-  try {
-    if (process.env.ANTHROPIC_API_KEY) {
-      await processWalkthroughWithClaude(req.params.id);
-    } else {
-      processWalkthroughStub(req.params.id);
-    }
-  } catch (err) {
-    db.prepare(
-      "UPDATE walkthroughs SET status = 'queued' WHERE id = ?"
-    ).run(req.params.id);
-    return res.status(500).json({ error: (err as Error).message });
+  const { id } = req.params;
+  // ?skipAi=1: draft placeholder items (one per photo) without calling
+  // Claude — the way out when drafting keeps failing.
+  const skipAi = req.query.skipAi === "1";
+  const existing = db.prepare("SELECT status FROM walkthroughs WHERE id = ?").get(id) as
+    | { status: string }
+    | undefined;
+  if (!existing) return res.status(404).json({ error: "not found" });
+  // Already drafted (e.g. a retry from the phone after it lost the reply):
+  // don't draft a second copy of every item.
+  if (existing.status === "review" || existing.status === "finalized") {
+    return res.json(getWalkthroughFull(id));
   }
-  res.json(getWalkthroughFull(req.params.id));
+  db.prepare("UPDATE walkthroughs SET status = 'processing' WHERE id = ?").run(id);
+  try {
+    if (process.env.ANTHROPIC_API_KEY && !skipAi) {
+      await processWalkthroughWithClaude(id);
+    } else {
+      processWalkthroughStub(id);
+    }
+    db.prepare("UPDATE walkthroughs SET process_error = NULL WHERE id = ?").run(id);
+  } catch (err) {
+    const msg = describeError(err);
+    console.error(`[process] walkthrough ${id} failed: ${msg}`);
+    db.prepare(
+      "UPDATE walkthroughs SET status = 'queued', process_error = ? WHERE id = ?"
+    ).run(msg, id);
+    return res.status(500).json({ error: msg });
+  }
+  res.json(getWalkthroughFull(id));
 });
+
+// Turns API errors into something readable on a phone screen.
+function describeError(err: unknown): string {
+  const e = err as { status?: number; message?: string; error?: { error?: { message?: string } } };
+  const apiMsg = e?.error?.error?.message;
+  const base = apiMsg || e?.message || String(err);
+  if (e?.status === 401) return `Anthropic rejected the API key (401). Check ANTHROPIC_API_KEY on Render. ${base}`;
+  if (e?.status === 403) return `Anthropic refused the request (403) — the key's workspace may not allow this. ${base}`;
+  if (e?.status === 429) return `Anthropic rate or spend limit hit (429) — check the workspace spend limit/credits. ${base}`;
+  if (e?.status === 400 && /credit|balance|billing/i.test(base)) return `Anthropic account is out of credit. ${base}`;
+  if (e?.status) return `Anthropic error ${e.status}: ${base}`;
+  return base;
+}
 
 // Finalize: every item must have a commitment date before this is allowed,
 // per the plan. Finalizing is also what triggers the (future) Homebuilder

@@ -63,6 +63,8 @@ export interface Walkthrough {
   homebuilder_project_id: number | null;
   pushed_to_homebuilder_ops_at: string | null;
   homebuilder_push_error: string | null;
+  // why the last drafting attempt failed, if it did
+  process_error: string | null;
 }
 
 export interface TodaySite {
@@ -148,6 +150,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ homebuilderProjectId }),
     }).then((r) => json<Project>(r)),
+
+  processWalkthrough: (id: string, skipAi = false) =>
+    fetch(`/api/walkthroughs/${id}/process${skipAi ? "?skipAi=1" : ""}`, { method: "POST" }).then(
+      async (r) => {
+        if (r.status === 401) window.dispatchEvent(new Event("pl-signed-out"));
+        const body = (await r.json().catch(() => null)) as (Walkthrough & { error?: string }) | null;
+        if (!r.ok) throw new Error(body?.error ?? `${r.status} ${r.statusText}`);
+        return body as Walkthrough;
+      }
+    ),
 
   deleteWalkthrough: (id: string) =>
     fetch(`/api/walkthroughs/${id}`, { method: "DELETE" }).then(async (r) => {

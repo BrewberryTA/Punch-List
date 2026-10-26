@@ -90,3 +90,5 @@ addColumnIfMissing("walkthroughs", "homebuilder_push_error", "homebuilder_push_e
 // Timestamped transcript from the phone ([{text,start,end}] in ms, JSON), so
 // drafting can line up what was said with when each photo was taken.
 addColumnIfMissing("walkthroughs", "transcript_chunks", "transcript_chunks TEXT");
+// Why the last drafting attempt failed (shown on the phone), cleared on success.
+addColumnIfMissing("walkthroughs", "process_error", "process_error TEXT");

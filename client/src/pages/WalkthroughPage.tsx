@@ -127,6 +127,19 @@ export function WalkthroughPage() {
     </button>
   );
 
+  const [reprocessing, setReprocessing] = useState(false);
+  async function reprocess(skipAi: boolean) {
+    if (!id) return;
+    setReprocessing(true);
+    try {
+      setServer(await api.processWalkthrough(id, skipAi));
+    } catch {
+      void refreshServer(); // the error text arrives with the walkthrough
+    } finally {
+      setReprocessing(false);
+    }
+  }
+
   async function moveMedia(mediaId: string, target: string) {
     if (!id) return;
     try {
@@ -261,20 +274,45 @@ export function WalkthroughPage() {
 
   // --- Server-tracked states ---
   if (server.status === "queued" || server.status === "processing") {
+    const failed = server.status === "queued" && server.process_error;
     return (
       <div className="page">
         <header className="page-header">
           <h1>Walkthrough</h1>
         </header>
         <div className="card">
-          <p>Turning your walkthrough into a punch list…</p>
-          <p className="muted">
-            {server.status === "queued"
-              ? "Uploaded — waiting to process."
-              : server.ai_configured
-                ? "Claude is drafting items from your on-device transcript…"
-                : "Drafting placeholder items (no ANTHROPIC_API_KEY configured on the server yet — see server/.env.example)."}
-          </p>
+          {!failed && (
+            <>
+              <p>Turning your walkthrough into a punch list…</p>
+              <p className="muted">
+                {server.status === "queued"
+                  ? "Uploaded — waiting to process."
+                  : server.ai_configured
+                    ? "Claude is drafting items from your transcript and photos…"
+                    : "Drafting placeholder items (no ANTHROPIC_API_KEY on the server)."}
+              </p>
+            </>
+          )}
+          {failed && (
+            <>
+              <p className="error">Drafting failed: {server.process_error}</p>
+              <p className="muted">
+                Nothing is lost — the recording and photos are saved. Try again, or skip the AI
+                and write the items yourself (you'll get one blank item per photo).
+              </p>
+            </>
+          )}
+          {(failed || server.status === "queued") && (
+            <div className="list-row-actions">
+              <button className="primary" disabled={reprocessing} onClick={() => void reprocess(false)}>
+                {reprocessing ? "Working…" : "Try again"}
+              </button>
+              <button className="secondary" disabled={reprocessing} onClick={() => void reprocess(true)}>
+                Skip AI
+              </button>
+            </div>
+          )}
+          {deleteButton}
         </div>
       </div>
     );

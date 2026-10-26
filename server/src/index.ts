@@ -3,7 +3,7 @@ import cors from "cors";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import "./db.js"; // ensure tables exist on boot
+import { db } from "./db.js"; // ensures tables exist on boot
 import { uploadsDir, dataRoot, persistent } from "./paths.js";
 import { homebuilderRouter } from "./routes/homebuilder.js";
 import { authRouter, requireLogin } from "./auth.js";
@@ -25,6 +25,10 @@ try {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// A drafting run cut off by a restart/redeploy would otherwise sit in
+// "processing" forever. Put it back in the queue; the phone retries it.
+db.prepare("UPDATE walkthroughs SET status = 'queued' WHERE status = 'processing'").run();
 
 const app = express();
 app.use(cors());
