@@ -293,6 +293,15 @@ export function WalkthroughPage() {
               </p>
             </>
           )}
+          {local?.status === "error" && local.lastError && (
+            <p className="error">
+              Upload from this phone stopped: {local.lastError}
+              <br />
+              <span className="muted">
+                {server.media.length} of {localPhotoCount} photo/video item(s) reached the server.
+              </span>
+            </p>
+          )}
           {failed && (
             <>
               <p className="error">Drafting failed: {server.process_error}</p>
