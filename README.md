@@ -41,8 +41,11 @@ What's real and working:
   DEPLOY.md) so there's nothing to cross-wire for phone use
 
 - **Homebuilder Ops push on finalize** (`server/src/homebuilder.ts`): items
-  land as punch items on the linked Homebuilder Ops project, with photo
-  links; failures are saved and retryable from the review screen
+  land as punch items on the linked Homebuilder Ops project, grouped under the
+  walkthrough on its To-dos & punch tab, with the PDF report attached and the
+  photos **copied** onto its photo wall (so they outlive close-out here);
+  videos stay links. Every step is safe to retry; failures are saved and
+  retryable from the review screen
 - **Close out a project** deletes its photos/video/audio, keeps item text
 - **Persistent storage** on a Render disk at `/var/data` (`server/src/paths.ts`)
 

@@ -1,12 +1,24 @@
+import fs from "node:fs";
+import path from "node:path";
+import sharp from "sharp";
 import { db } from "./db.js";
+import { buildPunchListPdf } from "./pdf.js";
+import { uploadsDir } from "./paths.js";
 
 // Push finalized punch lists into Homebuilder Ops (separate app, separate
 // Render service). Homebuilder Ops exposes two key-protected routes for this
 // (see integrations.js in the homebuilder-app repo):
 //   GET  /api/integrations/punch-list/projects
 //   POST /api/integrations/punch-list/items
-// Items land as kind 'punch' on that project's work list. One-way and
-// one-time per item, per the plan: not a live sync.
+//   POST /api/integrations/punch-list/walkthrough          (2026-10-29)
+//   POST /api/integrations/punch-list/walkthrough-report   (2026-10-29)
+//   POST /api/integrations/punch-list/photo                (2026-10-29)
+// Items land as kind 'punch' on that project's work list, grouped under the
+// walkthrough they came from, with this walkthrough's PDF report and its
+// photos copied across (Steve, 2026-10-29: a pushed list stays tied to the
+// job's to-dos, with its report and photos). Photos are COPIED, not linked,
+// because close-out here deletes them. One-way, not a live sync; every step
+// is safe to repeat — Homebuilder Ops de-duplicates on our ids.
 //
 // Configuration (Render → this service → Environment):
 //   HOMEBUILDER_OPS_KEY  same value as PUNCHLIST_INTEGRATION_KEY on the
@@ -22,10 +34,10 @@ export function homebuilderConfigured() {
   return Boolean(process.env.HOMEBUILDER_OPS_KEY);
 }
 
-async function call(path: string, init: RequestInit = {}) {
+async function call(urlPath: string, init: RequestInit = {}) {
   let res: Response;
   try {
-    res = await fetch(baseUrl() + path, {
+    res = await fetch(baseUrl() + urlPath, {
       ...init,
       headers: {
         ...(init.headers ?? {}),
@@ -66,14 +78,16 @@ interface ItemRow {
   homebuilder_item_id: number | null;
 }
 
-// Pushes every not-yet-pushed item of a finalized walkthrough. Safe to call
-// again (Retry): Homebuilder Ops de-duplicates on the Punch List item id, and
-// items already stamped with a homebuilder_item_id are skipped here anyway.
-// Never throws — the outcome is recorded on the walkthrough and returned.
+// Pushes a finalized walkthrough: the walkthrough itself, every item, the PDF
+// report, and every photo. Safe to call again (Retry): Homebuilder Ops
+// de-duplicates on the walkthrough, item and photo ids, so a repeat sends
+// nothing twice — and a walkthrough pushed before reports and photos existed
+// picks them up on its next push. Never throws — the outcome is recorded on
+// the walkthrough and returned.
 export async function pushWalkthrough(
   walkthroughId: string,
   publicBaseUrl: string
-): Promise<{ pushed: number; skipped?: string; error?: string }> {
+): Promise<{ pushed: number; photos?: number; report?: boolean; skipped?: string; error?: string }> {
   const wt = db
     .prepare(
       `SELECT w.id, w.status, w.recorded_at, w.created_at, p.homebuilder_project_id, p.name AS project_name
@@ -97,62 +111,114 @@ export async function pushWalkthrough(
     return { pushed: 0, skipped: "project not linked to a Homebuilder Ops project" };
   }
 
+  // Every item, not just the unpushed ones: Homebuilder Ops returns the ids it
+  // already has, and sending them all is what files an older walkthrough's
+  // items under it.
   const items = db
-    .prepare(
-      "SELECT * FROM items WHERE walkthrough_id = ? AND homebuilder_item_id IS NULL ORDER BY created_at"
-    )
+    .prepare("SELECT * FROM items WHERE walkthrough_id = ? ORDER BY created_at")
     .all(walkthroughId) as ItemRow[];
-  if (items.length === 0) {
-    db.prepare("UPDATE walkthroughs SET homebuilder_push_error = NULL WHERE id = ?").run(walkthroughId);
-    return { pushed: 0 };
-  }
-
-  const mediaFor = db.prepare(
-    "SELECT file_path, kind FROM media WHERE item_id = ? ORDER BY captured_at_ms"
-  );
+  const media = db
+    .prepare("SELECT id, item_id, kind, file_path, created_at, homebuilder_photo_id FROM media WHERE walkthrough_id = ? ORDER BY captured_at_ms")
+    .all(walkthroughId) as {
+      id: string; item_id: string | null; kind: string; file_path: string; created_at: string; homebuilder_photo_id: number | null;
+    }[];
   const walkDate = (wt.recorded_at || wt.created_at || "").slice(0, 10);
 
-  const payload = items.map((it) => {
-    const media = mediaFor.all(it.id) as { file_path: string; kind: string }[];
-    const lines = [`From Punch List walkthrough${walkDate ? ` on ${walkDate}` : ""}.`];
-    media.forEach((m, i) =>
-      lines.push(
-        `${m.kind === "video" ? "Video" : "Photo"} ${i + 1}: ${publicBaseUrl}/uploads/${encodeURIComponent(m.file_path)}`
-      )
-    );
-    return {
-      source_ref: it.id,
-      title: it.description,
-      detail: lines.join("\n"),
-      location: it.room,
-      trade: it.trade,
-      due_date: it.commitment_date,
-    };
-  });
-
   try {
-    const body = (await call("/api/integrations/punch-list/items", {
+    // 1. The walkthrough, so the items can be grouped under it.
+    await call("/api/integrations/punch-list/walkthrough", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project_id: wt.homebuilder_project_id, items: payload }),
-    })) as { results: { source_ref: string; work_item_id: number }[] };
+      body: JSON.stringify({
+        project_id: wt.homebuilder_project_id,
+        source_ref: wt.id,
+        walked_on: /^\d{4}-\d{2}-\d{2}$/.test(walkDate) ? walkDate : null,
+      }),
+    });
 
-    const stamp = db.prepare("UPDATE items SET homebuilder_item_id = ? WHERE id = ?");
-    db.transaction(() => {
-      for (const r of body.results) stamp.run(r.work_item_id, r.source_ref);
-      db.prepare(
-        "UPDATE walkthroughs SET pushed_to_homebuilder_ops_at = datetime('now'), homebuilder_push_error = NULL WHERE id = ?"
-      ).run(walkthroughId);
-    })();
-    return { pushed: body.results.length };
+    // 2. The items. Photos travel separately (step 4); a video stays a link,
+    //    because the photo wall takes pictures.
+    let pushed = 0;
+    if (items.length) {
+      const payload = items.map((it) => {
+        const lines = [`From Punch List walkthrough${walkDate ? ` on ${walkDate}` : ""}.`];
+        media
+          .filter((m) => m.item_id === it.id && m.kind === "video")
+          .forEach((m, i) => lines.push(`Video ${i + 1}: ${publicBaseUrl}/uploads/${encodeURIComponent(m.file_path)}`));
+        return {
+          source_ref: it.id,
+          title: it.description,
+          detail: lines.join("\n"),
+          location: it.room,
+          trade: it.trade,
+          due_date: it.commitment_date,
+        };
+      });
+      const body = (await call("/api/integrations/punch-list/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: wt.homebuilder_project_id, walkthrough_ref: wt.id, items: payload }),
+      })) as { results: { source_ref: string; work_item_id: number; created: boolean }[] };
+      const stamp = db.prepare("UPDATE items SET homebuilder_item_id = ? WHERE id = ?");
+      db.transaction(() => {
+        for (const r of body.results) stamp.run(r.work_item_id, r.source_ref);
+      })();
+      pushed = body.results.filter((r) => r.created).length;
+    }
+
+    // 3. The report — the same PDF the share button makes.
+    const pdf = await pdfBuffer(walkthroughId);
+    if (pdf) {
+      await call(`/api/integrations/punch-list/walkthrough-report?ref=${encodeURIComponent(wt.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/pdf" },
+        body: new Uint8Array(pdf),
+      });
+    }
+
+    // 4. Every photo, resized the way Homebuilder Ops' own camera button
+    //    resizes (1600px, JPEG q80), tied to its item.
+    let photos = 0;
+    const stampPhoto = db.prepare("UPDATE media SET homebuilder_photo_id = ? WHERE id = ?");
+    for (const m of media.filter((x) => x.kind === "photo" && !x.homebuilder_photo_id)) {
+      const file = path.join(uploadsDir, m.file_path);
+      if (!fs.existsSync(file)) continue; // already closed out here; nothing to copy
+      const jpeg = await sharp(file).rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 80 }).toBuffer();
+      const headers: Record<string, string> = {
+        "Content-Type": "image/jpeg",
+        "X-Walkthrough-Ref": wt.id,
+        "X-Source-Ref": m.id,
+        "X-Filename": encodeURIComponent(path.basename(m.file_path)),
+      };
+      if (m.item_id) headers["X-Item-Ref"] = m.item_id;
+      if (m.created_at) headers["X-Taken-At"] = new Date(m.created_at.replace(" ", "T") + "Z").toISOString();
+      const r = (await call("/api/integrations/punch-list/photo", { method: "POST", headers, body: new Uint8Array(jpeg) })) as { photo_id: number };
+      stampPhoto.run(r.photo_id, m.id);
+      photos++;
+    }
+
+    db.prepare(
+      "UPDATE walkthroughs SET pushed_to_homebuilder_ops_at = datetime('now'), homebuilder_push_error = NULL WHERE id = ?"
+    ).run(walkthroughId);
+    return { pushed, photos, report: !!pdf };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    db.prepare("UPDATE walkthroughs SET homebuilder_push_error = ? WHERE id = ?").run(
-      msg,
-      walkthroughId
-    );
+    db.prepare("UPDATE walkthroughs SET homebuilder_push_error = ? WHERE id = ?").run(msg, walkthroughId);
     return { pushed: 0, error: msg };
   }
+}
+
+// pdf.ts builds a PDFKit document (already ended); collect it into a buffer.
+function pdfBuffer(walkthroughId: string): Promise<Buffer | null> {
+  const doc = buildPunchListPdf(walkthroughId);
+  if (!doc) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const parts: Buffer[] = [];
+    doc.on("data", (c: Buffer) => parts.push(c));
+    doc.on("end", () => resolve(Buffer.concat(parts)));
+    doc.on("error", reject);
+  });
 }
 
 // Checks a username/password against Homebuilder Ops, so Punch List uses the
